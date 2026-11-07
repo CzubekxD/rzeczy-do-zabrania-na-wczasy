@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Na wczasy – lista rzeczy</title>
+  <meta name="description" content="Lista rzeczy do spakowania na wakacje, dopasowana do długości wyjazdu, pogody i osób.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <h1>Na wczasy</h1>
+      <div class="progress" aria-live="polite">
+        <span id="progress-text">0/0</span>
+        <div class="bar"><div id="progress-bar"></div></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="trip" class="card" aria-labelledby="h-trip"></section>
+    <section id="people" class="card" aria-labelledby="h-people"></section>
+    <section id="list" aria-labelledby="h-list"></section>
+    <footer class="foot">
+      <button type="button" id="reset" class="ghost">Zacznij od nowa</button>
+      <p>Dane zostają tylko w tej przeglądarce. Pogoda: <a href="https://open-meteo.com/">Open-Meteo</a> (CC BY 4.0).</p>
+    </footer>
+  </main>
+
+  <noscript><p class="card">Ta strona wymaga JavaScriptu.</p></noscript>
+  <script src="js/rules.js"></script>
+  <script src="js/weather.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

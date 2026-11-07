@@ -1,0 +1,11 @@
+{
+  "name": "rzeczy-do-zabrania-na-wczasy",
+  "version": "0.1.0",
+  "description": "Lista rzeczy do spakowania na wakacje – dopasowana do długości wyjazdu, pogody i osób.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "python3 -m http.server 8080"
+  }
+}
