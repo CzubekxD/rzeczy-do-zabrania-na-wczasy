@@ -3,6 +3,8 @@
 Prosta checklista na wakacje. Wpisujesz miejsce, daty, transport, pranie i osoby (K/M/D), a aplikacja
 dobiera pozycje i ilości ubrań do długości wyjazdu oraz pogody.
 
+Strona: https://czubekxd.github.io/rzeczy-do-zabrania-na-wczasy/
+
 **Wersja 1:** wyjazdy typu all inclusive. Czysty HTML/CSS/JS, bez budowania.
 
 ## Co robi
