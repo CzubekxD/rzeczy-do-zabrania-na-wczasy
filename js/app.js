@@ -58,7 +58,8 @@
     const w = S.trip.weather;
     if (!w) return 'Brak pogody – używam wartości domyślnych (ciepło, ok. 26°/18°). Sprawdź pogodę albo wpisz własne wartości.';
     const rain = w.rainDays === 1 ? '1 dzień z deszczem' : w.rainDays + ' dni z deszczem';
-    return 'Średnio ' + w.tmax + '° w dzień, ' + w.tmin + '° w nocy, ' + rain + ' (' + w.source + ').';
+    const cold = w.tminAbs != null && w.tminAbs < w.tmin - 1 ? ' (najzimniej ' + w.tminAbs + '°)' : '';
+    return 'Średnio ' + w.tmax + '° w dzień, ' + w.tmin + '° w nocy' + cold + ', ' + rain + ' (' + w.source + ').';
   }
 
   function setStatus(text, error) {
@@ -70,9 +71,13 @@
   function manualWeather(key, raw) {
     const prev = S.trip.weather || Object.assign({}, PackRules.DEFAULT_WEATHER);
     const v = raw === '' ? null : Number(raw);
-    S.trip.weather = Object.assign({}, prev, { [key]: v, source: 'ręcznie' });
+    const patch = { [key]: v, source: 'ręcznie' };
+    if (key === 'tmin') patch.tminAbs = null;           // ręczna noc zastępuje najzimniejszą noc z prognozy
+    if (key === 'rainDays') patch.rain = null;          // ręczne dni z deszczem unieważniają godziny z prognozy
+    S.trip.weather = Object.assign({}, prev, patch);
     persist();
     $('#wsummary').textContent = weatherText();
+    if (!S.trip.weather.rain) { const el = $('#wrain'); if (el) el.remove(); }
     renderList();
   }
 
@@ -123,6 +128,7 @@
             [r.name, r.admin1, r.postcodes[0], r.country].filter(Boolean).join(', '))))),
       h('div', { class: 'weather-box' },
         h('div', { id: 'wsummary' }, weatherText()),
+        w.rain && h('ul', { id: 'wrain', class: 'rain-list' }, w.rain.lines.map(l => h('li', {}, l))),
         h('details', { id: 'wmanual' },
           h('summary', {}, 'Popraw pogodę ręcznie'),
           h('div', { class: 'wgrid' },

@@ -26,9 +26,9 @@ test('okno prania zależy od pralki i jest ograniczone liczbą dni', () => {
 
 test('10 dni, upał, pralka: ilości ubrań dla dorosłego', () => {
   const p = personList({ days: 10, laundry: 'machine', transport: 'plane', weather: hot }, adultM);
-  assert.equal(find(p, 'cl-underwear').qty, 8);  // W=7, W+1
-  assert.equal(find(p, 'cl-shirts').qty, 7);
-  assert.equal(find(p, 'cl-socks').qty, 4);      // upał: ceil(7/2)
+  assert.equal(find(p, 'cl-underwear').qty, 9);  // W=7, upał: W+2
+  assert.equal(find(p, 'cl-shirts').qty, 8);     // upał: W+1
+  assert.equal(find(p, 'cl-socks').qty, 7);      // zawsze co najmniej tyle co dni prania
   assert.equal(find(p, 'cl-shorts').qty, 4);
   assert.equal(find(p, 'cl-swim').qty, 2);
   assert.ok(find(p, 'sh-flipflops'));
@@ -41,7 +41,8 @@ test('mróz i deszcz: ciepła kurtka, czapka, brak klapek i stroju', () => {
   const p = personList({ days: 5, laundry: 'none', transport: 'car', weather: cold }, adultM);
   assert.ok(find(p, 'cl-warm'));
   assert.ok(find(p, 'cl-hat-gloves'));
-  assert.ok(find(p, 'cl-rain'));
+  assert.ok(find(p, 'cl-softshell')); // 3 dni deszczu i zimno
+  assert.equal(find(p, 'cl-rain'), undefined);
   assert.equal(find(p, 'sh-flipflops'), undefined);
   assert.equal(find(p, 'cl-swim'), undefined);
   assert.equal(find(p, 'cl-hoodie').qty, 1);
@@ -73,8 +74,8 @@ test('niemowlę: pieluchy i body zamiast bielizny, fotelik tylko w aucie', () =>
 
 test('dziecko dostaje zapas ubrań', () => {
   const p = personList({ days: 7, laundry: 'machine', transport: 'plane', weather: hot }, kid);
-  assert.equal(find(p, 'cl-underwear').qty, 9); // W+1+1
-  assert.equal(find(p, 'cl-shirts').qty, 8);
+  assert.equal(find(p, 'cl-underwear').qty, 10); // upał W+2, dziecko +1
+  assert.equal(find(p, 'cl-shirts').qty, 9);
   assert.ok(find(p, 'kid-float'));
 });
 
@@ -105,7 +106,7 @@ test('weather.summarize liczy średnie, dni z deszczem i max UV', () => {
     temperature_2m_max: [30, 32, 28], temperature_2m_min: [20, 22, 18],
     precipitation_sum: [0, 2.5, 1], uv_index_max: [7, 9, 8]
   });
-  assert.deepEqual(s, { tmax: 30, tmin: 20, rainDays: 2, uv: 9 });
+  assert.deepEqual(s, { tmax: 30, tmin: 20, tminAbs: 18, rainDays: 2, uv: 9 });
   assert.throws(() => W.summarize({ temperature_2m_max: [], temperature_2m_min: [] }));
 });
 
@@ -230,4 +231,124 @@ test('adapter: każdy kraj z listy wyboru jest w bazie gniazdek', () => {
   const l = C.list();
   const missing = [...l.popular, ...l.other].map(c => c.code).filter(c => !P.lookup(c));
   assert.deepEqual(missing, []);
+});
+
+// ---------- ubrania vs pogoda: strefa przejściowa, niezmienniki ----------
+const mild = { tmax: 20, tmin: 12, tminAbs: 8, rainDays: 1, uv: 4 };
+const mildP = (days, laundry) => personList({ days, laundry, transport: 'car', weather: mild }, adultM);
+
+test('strefa przejściowa 20°/12° (min. 8°): kurtka przejściowa, długi rękaw, spodenki, ciepła piżama', () => {
+  const p = mildP(8, 'none');
+  assert.ok(find(p, 'cl-softshell'));
+  assert.ok(find(p, 'cl-longsleeve'));
+  assert.ok(find(p, 'cl-shorts'));
+  assert.match(find(p, 'cl-pyjamas').note, /Ciepła/);
+  assert.equal(find(p, 'cl-rain'), undefined); // softshell zastępuje lekką kurtkę
+});
+
+test('niezmienniki: skarpetek co najmniej tyle co dni prania, bielizny nie mniej niż skarpetek, spodnie max 3', () => {
+  [3, 7, 14, 30].forEach(days => ['none', 'hand', 'machine'].forEach(l => [hot, mild, cold].forEach(w => {
+    const p = personList({ days, laundry: l, transport: 'car', weather: w }, adultM);
+    const W = R.washWindow(days, l);
+    assert.ok(find(p, 'cl-socks').qty >= W);
+    assert.ok(find(p, 'cl-underwear').qty >= find(p, 'cl-socks').qty);
+    assert.ok(find(p, 'cl-underwear').qty >= 3);
+    assert.ok(find(p, 'cl-trousers').qty <= 3);
+  })));
+});
+
+test('granice progów: najzimniejsza noc decyduje o ciepłej kurtce, czapce i szaliku', () => {
+  const at = tminAbs => personList({ days: 5, transport: 'car', weather: { tmax: 12, tmin: 8, tminAbs, rainDays: 0 } }, adultM);
+  assert.ok(find(at(4), 'cl-warm') && find(at(4), 'cl-hat-gloves'));
+  assert.equal(find(at(5), 'cl-warm'), undefined);
+  assert.equal(find(at(5), 'cl-hat-gloves'), undefined);
+});
+
+test('spodenki od 20°, strój kąpielowy od 22°', () => {
+  const at = tmax => personList({ days: 5, transport: 'car', weather: { tmax, tmin: tmax - 8, rainDays: 0 } }, adultM);
+  assert.ok(find(at(20), 'cl-shorts'));
+  assert.equal(find(at(19), 'cl-shorts'), undefined);
+  assert.equal(find(at(21), 'cl-swim'), undefined);
+  assert.ok(find(at(22), 'cl-swim'));
+});
+
+test('1 dzień z deszczem bez danych godzinowych: lekka kurtka jest, parasola nie ma', () => {
+  const r = R.buildList({ days: 5, transport: 'car', weather: { tmax: 25, tmin: 16, rainDays: 1, uv: 6 } }, [adultM]);
+  assert.ok(find(r.people[0], 'cl-rain'));
+  assert.equal(find(r.shared, 'sun-umbrella'), undefined);
+});
+
+// ---------- deszcz godzinowy ----------
+const hrs = (date, spec, extra = {}) => Array.from({ length: 24 }, (_, h) => ({
+  h, mm: spec[h] || 0, showers: 0, p: spec[h] ? 60 : 0, g: 10, t: 15, ...extra
+}));
+
+test('buildEpisodes: przelotny (≤2 h), ciągły (≥3 h), ulewny (≥7,6 mm/h), mżawka', () => {
+  const day = [];
+  const mk = (from, vals) => vals.forEach((mm, i) => day.push({ h: from + i, mm, showers: 0, p: 70 }));
+  mk(8, [0.3, 1.2]);           // 8-10: przelotny
+  mk(12, [1, 1, 1, 1]);        // 12-16: ciągły
+  mk(18, [9]);                 // 18-19: ulewny
+  mk(21, [0.2]);               // 21-22: mżawka
+  const eps = W.buildEpisodes(day.sort((a, b) => a.h - b.h));
+  assert.deepEqual(eps.map(e => e.type), ['przelotny', 'ciągły', 'ulewny', 'mżawka']);
+  assert.equal(eps[0].p, 70);
+});
+
+test('buildEpisodes: godziny z niskim prawdopodobieństwem są pomijane', () => {
+  const eps = W.buildEpisodes([{ h: 10, mm: 1, showers: 0, p: 10 }, { h: 11, mm: 1, showers: 0, p: 50 }]);
+  assert.equal(eps.length, 1);
+  assert.equal(eps[0].from, 11);
+});
+
+test('summarizeRainDay: noc poza oknem 7–22 nie liczy się', () => {
+  const d = W.summarizeRainDay('2026-06-05', hrs('2026-06-05', { 2: 5, 3: 5 }));
+  assert.equal(d.hours, 0);
+  assert.equal(d.rainJacket, false);
+});
+
+test('summarizeRainDay: krótki przelotny deszcz = parasol, bez softshella; ulewa = softshell', () => {
+  const light = W.summarizeRainDay('2026-06-05', hrs('2026-06-05', { 14: 1.5, 15: 1 }, { t: 22 }));
+  assert.equal(light.episodes[0].type, 'przelotny');
+  assert.equal(light.umbrella, true);
+  assert.equal(light.softshell, false);
+  const heavy = W.summarizeRainDay('2026-06-06', hrs('2026-06-06', { 14: 9 }));
+  assert.equal(heavy.heavy, true);
+  assert.equal(heavy.softshell, true);
+});
+
+test('summarizeHourly: jeden przelotny dzień nie włącza kurtki, ulewa tak; tekst ma godziny, mm/h i %', () => {
+  const build = spec => {
+    const rows = hrs('2026-06-05', spec);
+    return {
+      time: rows.map(r => '2026-06-05T' + String(r.h).padStart(2, '0') + ':00'),
+      precipitation: rows.map(r => r.mm), showers: rows.map(() => 0),
+      precipitation_probability: rows.map(r => r.p), wind_gusts_10m: rows.map(() => 10), temperature_2m: rows.map(() => 15)
+    };
+  };
+  const one = W.summarizeHourly(build({ 14: 1.5, 15: 1 }));
+  assert.equal(one.advice.rainJacket, false);
+  assert.match(one.lines[0], /05\.06 14:00–16:00 przelotny deszcz, do 1,5 mm\/h, 60%/);
+  const storm = W.summarizeHourly(build({ 14: 9 }));
+  assert.equal(storm.advice.softshell, true);
+  assert.equal(W.summarizeHourly(build({})).lines[0].startsWith('Bez istotnego deszczu'), true);
+});
+
+test('fetchWeather: prognoza dokłada dane godzinowe, a ich błąd nie psuje pogody', async () => {
+  const hourlyBody = { hourly: { time: ['2026-06-05T14:00', '2026-06-05T15:00'], precipitation: [9, 0],
+    showers: [0, 0], precipitation_probability: [80, 0], wind_gusts_10m: [10, 10], temperature_2m: [15, 15] } };
+  const opts = { lat: 1, lon: 2, from: '2026-06-05', to: '2026-06-05', today: '2026-06-01' };
+  const ok = await W.fetchWeather(opts, fakeFetch(u => (u.includes('hourly=') ? hourlyBody : daily(1, 20, 10, 0))));
+  assert.equal(ok.rain.mode, 'hourly');
+  assert.equal(ok.rain.advice.softshell, true);
+  const bad = await W.fetchWeather(opts, fakeFetch(u => (u.includes('hourly=') ? { error: true, reason: 'x' } : daily(1, 20, 10, 0))));
+  assert.equal(bad.rain, undefined);
+  assert.equal(bad.tmax, 20);
+});
+
+test('softshell/kurtka z godzin deszczu zastępuje regułę dni z deszczem', () => {
+  const weather = { tmax: 24, tmin: 15, tminAbs: 15, rainDays: 5, rain: { mode: 'hourly', lines: ['x'], advice: { umbrella: false, rainJacket: false, softshell: false } } };
+  const r = R.buildList({ days: 5, transport: 'car', weather }, [adultM]);
+  assert.equal(find(r.people[0], 'cl-rain'), undefined);
+  assert.equal(find(r.shared, 'sun-umbrella'), undefined);
 });
