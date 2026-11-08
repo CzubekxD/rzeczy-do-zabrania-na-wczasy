@@ -4,9 +4,9 @@
  * Oznaczenia: wszystkie progi i wzory to propozycje (PROP) z raportu w reports/.
  * Zmiana jednej liczby nie wymaga ruszania logiki – stałe są w THRESHOLDS i WASH_CAP. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.PackRules = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./plugs.js'));
+  else root.PackRules = factory(root.Plugs);
+})(typeof self !== 'undefined' ? self : this, function (Plugs) {
   'use strict';
 
   const CATS = [
@@ -49,8 +49,10 @@
     const tmin = num(w.tmin, DEFAULT_WEATHER.tmin);
     const rainDays = num(w.rainDays, DEFAULT_WEATHER.rainDays);
     const uv = w.uv == null ? null : num(w.uv, null);
+    const socket = Plugs ? Plugs.advice(trip.country, trip.countryName) : { show: true, note: '' };
     return {
       days,
+      socket,
       W: washWindow(days, trip.laundry),
       laundry: trip.laundry || 'none',
       plane: trip.transport === 'plane',
@@ -94,7 +96,7 @@
       note: 'Tylko w bagażu podręcznym; do 100 Wh bez zgody linii.' },
     { id: 'el-headphones', cat: 'Elektronika', scope: 'person', name: 'Słuchawki', who: isAdult, low: true },
     { id: 'el-adapter', cat: 'Elektronika', scope: 'shared', name: 'Adapter do gniazdek', low: true,
-      note: 'Potrzebny w krajach z innymi gniazdkami niż typ C/F – sprawdź cel podróży.' },
+      when: c => c.socket.show, note: c => c.socket.note },
     { id: 'el-car', cat: 'Elektronika', scope: 'shared', name: 'Ładowarka samochodowa i uchwyt na telefon', when: c => c.car },
 
     // ---- Higiena

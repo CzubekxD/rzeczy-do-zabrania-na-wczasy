@@ -84,7 +84,7 @@
     mount(el,
       h('h2', { id: 'h-trip' }, 'Wyjazd ', h('span', { class: 'chip' }, 'All inclusive')),
       h('label', { class: 'field row' }, 'Kraj',
-        h('select', { id: 'country', onchange: e => { t.country = e.target.value; persist(); } },
+        h('select', { id: 'country', onchange: e => { t.country = e.target.value; persist(); renderList(); } },
           h('option', { value: '', selected: !t.country }, '— wybierz kraj —'),
           h('optgroup', { label: 'Popularne' }, countries.popular.map(countryOption)),
           h('optgroup', { label: 'Pozostałe' }, countries.other.map(countryOption)))),
@@ -271,7 +271,8 @@
   function renderList() {
     const people = activePersons();
     const d = tripDays();
-    const trip = { days: d.n, transport: S.trip.transport, laundry: S.trip.laundry, weather: S.trip.weather };
+    const trip = { days: d.n, transport: S.trip.transport, laundry: S.trip.laundry, weather: S.trip.weather,
+      country: S.trip.country, countryName: Countries.name(S.trip.country) };
     const result = PackRules.buildList(trip, people);
     const hiddenCount = Object.keys(S.hidden).length;
     const el = $('#list');
