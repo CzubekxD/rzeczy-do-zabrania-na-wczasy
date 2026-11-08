@@ -59,15 +59,14 @@
     return k;
   }
 
-  /** Warianty zapytania dla geokodera: pełny tekst, potem kolejne człony po przecinku. */
-  function geocodeQueries(address) {
-    const full = address.trim().replace(/\s+/g, ' ');
-    const parts = full.split(',').map(s => s.trim()).filter(Boolean);
-    const out = [full];
-    parts.slice(1).concat(parts.slice(0, 1)).forEach(p => {
-      if (!out.includes(p)) out.push(p);
-    });
-    return out;
+  const norm = s => String(s || '').trim().replace(/\s+/g, ' ');
+  const flat = s => norm(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l');
+
+  /** Warianty nazwy miejscowości: całość, potem człony po przecinku ("Alanya, Antalya" -> Alanya). */
+  function cityQueries(city) {
+    const full = norm(city);
+    const parts = full.split(',').map(norm).filter(Boolean);
+    return [full].concat(parts.filter(p => p !== full));
   }
 
   async function getJson(url, fetchFn) {
@@ -78,22 +77,46 @@
     return data;
   }
 
-  async function geocode(address, fetchFn) {
+  function geoUrl(name, countryCode) {
+    return GEO + '?name=' + encodeURIComponent(name) + '&countryCode=' + encodeURIComponent(countryCode) +
+      '&count=10&language=pl&format=json';
+  }
+
+  /** Wyniki z kraju, z trafionym kodem pocztowym na początku. */
+  function pickResults(results, countryCode, postcode) {
+    const pc = flat(postcode).replace(/\s/g, '');
+    const list = (results || []).filter(r => !r.country_code || r.country_code === countryCode).map(r => ({
+      name: r.name,
+      admin1: r.admin1 || '',
+      country: r.country || '',
+      postcodes: r.postcodes || [],
+      lat: r.latitude,
+      lon: r.longitude,
+      hit: !!pc && (r.postcodes || []).some(c => flat(c).replace(/\s/g, '') === pc)
+    }));
+    return list.sort((a, b) => Number(b.hit) - Number(a.hit));
+  }
+
+  /**
+   * {country: kod ISO, city, postcode?} -> lista miejsc (najlepsze pierwsze).
+   * Najpierw nazwa miejscowości w danym kraju, a gdy to nie da wyniku – sam kod pocztowy w tym kraju.
+   */
+  async function geocode(place, fetchFn) {
     const f = fetchFn || fetch.bind(globalThis);
-    for (const q of geocodeQueries(address)) {
-      const url = GEO + '?name=' + encodeURIComponent(q) + '&count=5&language=pl&format=json';
-      const data = await getJson(url, f);
-      if (data.results && data.results.length) {
-        return data.results.map(r => ({
-          name: r.name,
-          admin1: r.admin1 || '',
-          country: r.country || '',
-          lat: r.latitude,
-          lon: r.longitude
-        }));
-      }
+    const country = norm(place && place.country).toUpperCase();
+    const city = norm(place && place.city);
+    const postcode = norm(place && place.postcode);
+    if (!country) throw new Error('wybierz kraj');
+    if (!city) throw new Error('wpisz miejscowość');
+    const names = cityQueries(city).filter(q => q.length >= 2);
+    if (postcode) names.push(postcode);
+    for (const q of names) {
+      const data = await getJson(geoUrl(q, country), f);
+      const found = pickResults(data.results, country, postcode);
+      if (found.length) return found;
     }
-    throw new Error('nie znaleziono miejsca „' + address.trim() + '”');
+    throw new Error('nie znaleziono miejscowości „' + city + '” w wybranym kraju – sprawdź pisownię' +
+      (postcode ? ' lub kod pocztowy' : ''));
   }
 
   function dailyUrl(base, lat, lon, from, to, withUv) {
@@ -132,5 +155,5 @@
     return Object.assign(average(ok), { source: 'średnia z lat ' + y[0] + '–' + y[y.length - 1] });
   }
 
-  return { summarize, average, addYears, addDays, firstArchiveShift, geocodeQueries, geocode, fetchWeather, dailyUrl };
+  return { summarize, average, addYears, addDays, firstArchiveShift, cityQueries, pickResults, geocode, fetchWeather, dailyUrl };
 });

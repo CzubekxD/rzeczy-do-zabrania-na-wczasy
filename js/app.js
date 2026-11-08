@@ -4,6 +4,8 @@
   'use strict';
 
   const S = Store.load();
+  const countries = Countries.list();
+  const countryOption = c => h('option', { value: c.code, selected: S.trip.country === c.code }, c.name);
   let placeResults = [];
   let status = { text: '', error: false };
   const $ = sel => document.querySelector(sel);
@@ -81,11 +83,22 @@
     const el = $('#trip');
     mount(el,
       h('h2', { id: 'h-trip' }, 'Wyjazd ', h('span', { class: 'chip' }, 'All inclusive')),
-      h('label', { class: 'field row' }, 'Dokąd (miejscowość lub adres)',
-        h('input', {
-          type: 'text', id: 'addr', value: t.address, autocomplete: 'off', placeholder: 'np. Hurghada, Egipt',
-          oninput: e => { t.address = e.target.value; persist(); }
-        })),
+      h('label', { class: 'field row' }, 'Kraj',
+        h('select', { id: 'country', onchange: e => { t.country = e.target.value; persist(); } },
+          h('option', { value: '', selected: !t.country }, '— wybierz kraj —'),
+          h('optgroup', { label: 'Popularne' }, countries.popular.map(countryOption)),
+          h('optgroup', { label: 'Pozostałe' }, countries.other.map(countryOption)))),
+      h('div', { class: 'row two' },
+        h('label', { class: 'field' }, 'Miejscowość',
+          h('input', {
+            type: 'text', id: 'city', value: t.city, autocomplete: 'off', placeholder: 'np. Alanya',
+            oninput: e => { t.city = e.target.value; persist(); }
+          })),
+        h('label', { class: 'field' }, 'Kod pocztowy (opcjonalnie)',
+          h('input', {
+            type: 'text', id: 'postcode', value: t.postcode, autocomplete: 'off', placeholder: 'np. 07400',
+            oninput: e => { t.postcode = e.target.value; persist(); }
+          }))),
       h('div', { class: 'row two' },
         h('label', { class: 'field' }, 'Od',
           h('input', { type: 'date', id: 'from', value: t.from, onchange: e => { t.from = e.target.value; if (t.to && t.to < t.from) t.to = t.from; persist(); renderTrip(); renderList(); } })),
@@ -105,9 +118,9 @@
       h('button', { type: 'button', id: 'fetch-weather', onclick: doWeather }, 'Sprawdź pogodę'),
       h('p', { id: 'wstatus', class: 'status' + (status.error ? ' err' : '') }, status.text),
       placeResults.length > 1 && h('label', { class: 'field row' }, 'Znalezione miejsca',
-        h('select', { id: 'places', onchange: e => { t.place = Object.assign({ query: t.address.trim() }, placeResults[Number(e.target.value)]); persist(); doWeather(true); } },
+        h('select', { id: 'places', onchange: e => { t.place = Object.assign({ query: placeKey() }, placeResults[Number(e.target.value)]); persist(); doWeather(true); } },
           placeResults.map((r, i) => h('option', { value: i, selected: t.place && t.place.lat === r.lat && t.place.lon === r.lon },
-            [r.name, r.admin1, r.country].filter(Boolean).join(', '))))),
+            [r.name, r.admin1, r.postcodes[0], r.country].filter(Boolean).join(', '))))),
       h('div', { class: 'weather-box' },
         h('div', { id: 'wsummary' }, weatherText()),
         h('details', { id: 'wmanual' },
@@ -119,23 +132,25 @@
                   oninput: e => manualWeather(k, e.target.value) })))))));
   }
 
+  const placeKey = () => [S.trip.country, S.trip.city.trim(), S.trip.postcode.trim()].join('|');
+
   async function doWeather(keepPlace) {
     const t = S.trip;
-    const addr = t.address.trim();
-    if (!addr) return setStatus('Wpisz miejscowość lub adres.', true);
+    if (!t.country) return setStatus('Wybierz kraj z listy.', true);
+    if (!t.city.trim()) return setStatus('Wpisz miejscowość.', true);
     if (!t.from || !t.to || t.to < t.from) return setStatus('Wybierz daty od–do w kalendarzu.', true);
     const btn = $('#fetch-weather');
     if (btn) btn.disabled = true;
     setStatus('Sprawdzam pogodę…');
     try {
-      if (keepPlace !== true && (!t.place || t.place.query !== addr)) {
-        placeResults = await Weather.geocode(addr);
-        t.place = Object.assign({ query: addr }, placeResults[0]);
+      if (keepPlace !== true && (!t.place || t.place.query !== placeKey())) {
+        placeResults = await Weather.geocode({ country: t.country, city: t.city, postcode: t.postcode });
+        t.place = Object.assign({ query: placeKey() }, placeResults[0]);
       }
       const w = await Weather.fetchWeather({ lat: t.place.lat, lon: t.place.lon, from: t.from, to: t.to, today: todayISO() });
       t.weather = w;
       persist();
-      status = { text: 'Pogoda dla: ' + [t.place.name, t.place.admin1, t.place.country].filter(Boolean).join(', ') + '.', error: false };
+      status = { text: 'Pogoda dla: ' + [t.place.name, t.place.admin1, t.place.country || Countries.name(t.country)].filter(Boolean).join(', ') + '.', error: false };
       renderTrip();
       renderList();
     } catch (e) {

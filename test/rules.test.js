@@ -115,10 +115,41 @@ test('weather.firstArchiveShift wybiera rok z danymi w archiwum', () => {
   assert.equal(W.addYears('2026-08-20', -2), '2024-08-20');
 });
 
-test('geocodeQueries: pełny tekst, potem człony adresu', () => {
-  assert.deepEqual(W.geocodeQueries('Hotel X, Hurghada, Egipt'),
-    ['Hotel X, Hurghada, Egipt', 'Hurghada', 'Egipt', 'Hotel X']);
-  assert.deepEqual(W.geocodeQueries('Zakopane'), ['Zakopane']);
+test('cityQueries: całość, potem człony po przecinku', () => {
+  assert.deepEqual(W.cityQueries('Alanya, Antalya'), ['Alanya, Antalya', 'Alanya', 'Antalya']);
+  assert.deepEqual(W.cityQueries('  Zakopane '), ['Zakopane']);
+});
+
+const geo = results => ({ results });
+const r = (name, cc, postcodes, lat) => ({ name, country_code: cc, country: cc, postcodes, latitude: lat, longitude: 1 });
+
+test('geocode: wysyła kod kraju i wybiera wynik z pasującym kodem pocztowym', async () => {
+  const urls = [];
+  const out = await W.geocode({ country: 'tr', city: 'Alanya', postcode: '07400' },
+    fakeFetch(u => { urls.push(u); return geo([r('Alanya', 'TR', ['07000'], 1), r('Alanya', 'TR', ['07400'], 2)]); }));
+  assert.ok(urls[0].includes('name=Alanya') && urls[0].includes('countryCode=TR'));
+  assert.equal(out[0].lat, 2);
+});
+
+test('geocode: odrzuca wyniki z innego kraju', async () => {
+  const out = await W.geocode({ country: 'PL', city: 'Rzym' },
+    fakeFetch(() => geo([r('Rzym', 'IT', [], 1), r('Rzym', 'PL', [], 2)])));
+  assert.equal(out.length, 1);
+  assert.equal(out[0].lat, 2);
+});
+
+test('geocode: gdy miejscowość nic nie da, próbuje kodu pocztowego', async () => {
+  const names = [];
+  const out = await W.geocode({ country: 'TR', city: 'Alanyaa', postcode: '07400' },
+    fakeFetch(u => { const n = new URL(u).searchParams.get('name'); names.push(n); return n === '07400' ? geo([r('Alanya', 'TR', ['07400'], 3)]) : {}; }));
+  assert.deepEqual(names, ['Alanyaa', '07400']);
+  assert.equal(out[0].lat, 3);
+});
+
+test('geocode: brak kraju, miejscowości lub wyniku daje czytelny błąd', async () => {
+  await assert.rejects(W.geocode({ country: '', city: 'X' }, fakeFetch(() => ({}))), /wybierz kraj/);
+  await assert.rejects(W.geocode({ country: 'TR', city: ' ' }, fakeFetch(() => ({}))), /wpisz miejscowość/);
+  await assert.rejects(W.geocode({ country: 'TR', city: 'Nigdzie' }, fakeFetch(() => ({}))), /nie znaleziono/);
 });
 
 function fakeFetch(handler) {
