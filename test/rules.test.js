@@ -191,3 +191,39 @@ test('fetchWeather: błąd API przechodzi jako wyjątek z powodem', async () => 
       fakeFetch(() => ({ error: true, reason: 'limit' }))),
     /limit/);
 });
+
+// ---------- adapter do gniazdek ----------
+const P = require('../js/plugs.js');
+const adapterFor = country => find(R.buildList({ days: 7, country, countryName: country }, [adultM]).shared, 'el-adapter');
+
+test('adapter: kraje z gniazdkami C/E/F – pozycja ukryta', () => {
+  ['PL', 'TR', 'EG', 'GR', 'ES', 'IT', 'DE', 'FR', 'tr'].forEach(c => assert.equal(adapterFor(c), undefined, c));
+});
+
+test('adapter: UK, USA, Cypr, ZEA – pozycja widoczna z typem gniazdka', () => {
+  ['GB', 'US', 'CY', 'AE', 'JP'].forEach(c => assert.ok(adapterFor(c), c));
+  assert.match(adapterFor('GB').note, /typu G/);
+  assert.match(adapterFor('CY').note, /nie pasuje/);
+});
+
+test('adapter: kraje mieszane (np. Indie, Tajlandia) – adapter „na wszelki wypadek”', () => {
+  assert.match(adapterFor('IN').note, /na wszelki wypadek/);
+  assert.match(adapterFor('TH').note, /na wszelki wypadek/);
+});
+
+test('adapter: USA/Japonia/Meksyk ostrzegają o niskim napięciu', () => {
+  ['US', 'JP', 'MX'].forEach(c => assert.match(adapterFor(c).note, /napięcie/i, c));
+  assert.doesNotMatch(adapterFor('GB').note, /napięcie/i);
+});
+
+test('adapter: brak kraju lub kraj spoza bazy – ogólna wskazówka', () => {
+  assert.match(adapterFor('').note, /sprawdź cel podróży/);
+  assert.match(adapterFor('XX').note, /sprawdź cel podróży/);
+});
+
+test('adapter: każdy kraj z listy wyboru jest w bazie gniazdek', () => {
+  const C = require('../js/countries.js');
+  const l = C.list();
+  const missing = [...l.popular, ...l.other].map(c => c.code).filter(c => !P.lookup(c));
+  assert.deepEqual(missing, []);
+});
