@@ -196,13 +196,17 @@ test('fetchWeather: błąd API przechodzi jako wyjątek z powodem', async () => 
 const P = require('../js/plugs.js');
 const adapterFor = country => find(R.buildList({ days: 7, country, countryName: country }, [adultM]).shared, 'el-adapter');
 
-test('adapter: kraje z gniazdkami C/E/F – pozycja ukryta', () => {
-  ['PL', 'TR', 'EG', 'GR', 'ES', 'IT', 'DE', 'FR', 'tr'].forEach(c => assert.equal(adapterFor(c), undefined, c));
+test('adapter: kraje z gniazdkami C/E/F – pozycja widoczna z informacją, że adapter niepotrzebny', () => {
+  ['PL', 'TR', 'EG', 'GR', 'ES', 'IT', 'DE', 'FR', 'tr'].forEach(c => {
+    assert.ok(adapterFor(c), c);
+    assert.match(adapterFor(c).note, /^Nie potrzebujesz adaptera/, c);
+  });
 });
 
 test('adapter: UK, USA, Cypr, ZEA – pozycja widoczna z typem gniazdka', () => {
   ['GB', 'US', 'CY', 'AE', 'JP'].forEach(c => assert.ok(adapterFor(c), c));
   assert.match(adapterFor('GB').note, /typu G/);
+  assert.match(adapterFor('CY').note, /^Potrzebujesz adaptera/);
   assert.match(adapterFor('CY').note, /nie pasuje/);
 });
 
