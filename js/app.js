@@ -230,40 +230,64 @@
   function mustSection(ownerId, permanentList, placeholder) {
     const extras = S.trip.extras[ownerId] || [];
     const rows = [];
-    permanentList.forEach(m => rows.push(itemRow(ownerId + ':m:' + m.id, { name: m.text }, () => {
+    permanentList.filter(m => !m.cat).forEach(m => rows.push(itemRow(ownerId + ':m:' + m.id, { name: m.text }, () => {
       permanentList.splice(permanentList.indexOf(m), 1); persist(); renderList();
     }, 'Usuń na stałe')));
-    extras.forEach(m => rows.push(itemRow(ownerId + ':e:' + m.id, { name: m.text, note: 'Tylko ten wyjazd' }, () => {
+    extras.filter(m => !m.cat).forEach(m => rows.push(itemRow(ownerId + ':e:' + m.id, { name: m.text, note: 'Tylko ten wyjazd' }, () => {
       extras.splice(extras.indexOf(m), 1); persist(); renderList();
     }, 'Usuń')));
     const input = h('input', { type: 'text', 'aria-label': 'Nowa pozycja', placeholder, autocomplete: 'off' });
     const mode = h('select', { 'aria-label': 'Zapamiętać?' },
       h('option', { value: 'always' }, 'Zawsze (zapamiętaj)'),
       h('option', { value: 'trip' }, 'Tylko ten wyjazd'));
+    const catSel = h('select', { 'aria-label': 'Kategoria' },
+      h('option', { value: '' }, 'Kategoria: własne'),
+      PackRules.CATS.map(c => h('option', { value: c }, c)));
     const add = () => {
       const text = input.value.trim();
       if (!text) return;
-      if (mode.value === 'always') permanentList.push({ id: Store.uid(), text });
-      else (S.trip.extras[ownerId] = S.trip.extras[ownerId] || []).push({ id: Store.uid(), text });
+      const item = { id: Store.uid(), text };
+      if (catSel.value) item.cat = catSel.value;
+      if (mode.value === 'always') permanentList.push(item);
+      else (S.trip.extras[ownerId] = S.trip.extras[ownerId] || []).push(item);
       persist(); renderList();
     };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
     return [
       h('h3', {}, ownerId === 'shared' ? 'Własne wspólne' : 'Moje must-have'),
       rows.length > 0 && h('ul', { class: 'items' }, rows),
-      h('div', { class: 'addmust' }, input, mode, h('button', { type: 'button', onclick: add }, 'Dodaj'))
+      h('div', { class: 'addmust' }, input, catSel, mode, h('button', { type: 'button', onclick: add }, 'Dodaj'))
     ];
+  }
+
+  // Własne pozycje z wybraną kategorią trafiają do jej grupy (w kolejności kategorii).
+  function mergeCustom(ownerId, groups, permanentList) {
+    const extras = S.trip.extras[ownerId] || [];
+    const custom = [];
+    permanentList.filter(m => m.cat).forEach(m => custom.push({
+      cat: m.cat, id: 'c-' + m.id, key: ownerId + ':m:' + m.id, name: m.text, removeLabel: 'Usuń na stałe',
+      remove: () => { permanentList.splice(permanentList.indexOf(m), 1); persist(); renderList(); }
+    }));
+    extras.filter(m => m.cat).forEach(m => custom.push({
+      cat: m.cat, id: 'c-' + m.id, key: ownerId + ':e:' + m.id, name: m.text, note: 'Tylko ten wyjazd', removeLabel: 'Usuń',
+      remove: () => { extras.splice(extras.indexOf(m), 1); persist(); renderList(); }
+    }));
+    return PackRules.CATS.map(cat => {
+      const base = groups.find(g => g.cat === cat);
+      const items = (base ? base.items : []).concat(custom.filter(c => c.cat === cat));
+      return { cat, items };
+    }).filter(g => g.items.length);
   }
 
   function groupsView(ownerId, groups) {
     return groups.map(g => {
-      const rows = g.items.filter(e => !S.hidden[e.id]);
+      const rows = g.items.filter(e => e.remove || !S.hidden[e.id]);
       if (!rows.length) return null;
       return [
         h('h3', {}, g.cat),
-        h('ul', { class: 'items' }, rows.map(e => itemRow(ownerId + ':' + e.id, e, () => {
-          S.hidden[e.id] = true; persist(); renderList();
-        }, 'Ukryj')))
+        h('ul', { class: 'items' }, rows.map(e => e.remove
+          ? itemRow(e.key, e, e.remove, e.removeLabel)
+          : itemRow(ownerId + ':' + e.id, e, () => { S.hidden[e.id] = true; persist(); renderList(); }, 'Ukryj')))
       ];
     });
   }
@@ -284,11 +308,11 @@
       people.length === 0 && h('p', { class: 'hint' }, 'Nikt nie jedzie? Dodaj osoby wyżej – pokażę dla nich ubrania i rzeczy osobiste.'),
       h('details', { class: 'owner', open: true },
         h('summary', {}, 'Wspólne'),
-        groupsView('shared', result.shared),
+        groupsView('shared', mergeCustom('shared', result.shared, S.sharedMust)),
         mustSection('shared', S.sharedMust, 'np. gry planszowe')),
       result.people.map(({ person, groups }) => h('details', { class: 'owner', open: true },
         h('summary', {}, person.name || TYPE_LABEL[person.type]),
-        groupsView(person.id, groups),
+        groupsView(person.id, mergeCustom(person.id, groups, person.mustHave)),
         mustSection(person.id, person.mustHave, 'np. sprzęt do soczewek, leki'))),
       hiddenCount > 0 && h('button', { type: 'button', class: 'restore', onclick: () => { S.hidden = {}; persist(); renderList(); } },
         'Przywróć ukryte pozycje (' + hiddenCount + ')'));
