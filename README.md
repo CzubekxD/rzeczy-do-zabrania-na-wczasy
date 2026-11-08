@@ -10,7 +10,7 @@ Strona: https://czubekxd.github.io/rzeczy-do-zabrania-na-wczasy/
 ## Co robi
 
 - Daty od–do z kalendarza, liczba dni liczona automatycznie.
-- Pogoda z [Open-Meteo](https://open-meteo.com/) po wpisaniu miejsca: prognoza do ok. 15 dni naprzód,
+- Pogoda z [Open-Meteo](https://open-meteo.com/) po wybraniu kraju i wpisaniu miejscowości (kod pocztowy opcjonalny): prognoza do ok. 15 dni naprzód,
   dalej średnia z trzech poprzednich lat dla tych samych dat. Wartości można poprawić ręcznie.
 - Ilości ubrań z „okna prania” (pralka 7 dni, ręczne 5, brak – do 14) i progów pogodowych
   (kurtka, klapki, kapelusz, bluza…). Wzory i progi: `js/rules.js`.

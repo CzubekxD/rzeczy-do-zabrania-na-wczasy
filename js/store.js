@@ -15,7 +15,7 @@
       hidden: {},     // {itemId:true} – ukryte pozycje domyślne
       checked: {},    // {klucz:true}
       trip: {
-        address: '', place: null, from: '', to: '',
+        country: '', city: '', postcode: '', place: null, from: '', to: '',
         transport: 'plane', laundry: 'machine', type: 'all-inclusive',
         weather: null,
         include: {},  // {personId:false} gdy dana osoba nie jedzie
@@ -34,7 +34,11 @@
       const raw = (storage || localStorage).getItem(KEY);
       if (!raw) return base;
       const d = JSON.parse(raw);
-      return Object.assign(base, d, { trip: Object.assign(base.trip, d.trip || {}) });
+      const trip = Object.assign(base.trip, d.trip || {});
+      // dawne pole „address” (jeden tekst) przenosimy do miejscowości; kraj trzeba wybrać ponownie
+      if (trip.address && !trip.city) trip.city = trip.address;
+      delete trip.address;
+      return Object.assign(base, d, { trip });
     } catch (e) {
       return base;
     }
