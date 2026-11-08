@@ -54,16 +54,17 @@
     };
   }
 
-  /** Gotowa wskazówka do listy: {show, note} – show=false, gdy adapter niepotrzebny. */
+  /** Gotowa wskazówka do listy: {show, note}. Pozycja jest zawsze widoczna – notatka mówi,
+   *  czy adapter jest potrzebny (żeby nie trzeba było tego szukać). */
   function advice(country, countryName) {
     const p = lookup(country);
     if (!p) return { show: true, note: 'Potrzebny w krajach z innymi gniazdkami niż typ C/F – sprawdź cel podróży.' };
     const where = countryName || p.code;
     const sockets = where + ': gniazdka typu ' + p.types.join('/') + ', ' + p.v + ' V.';
-    if (!p.needAdapter) return { show: false, note: sockets + ' Polska wtyczka pasuje.' };
+    if (!p.needAdapter) return { show: true, note: 'Nie potrzebujesz adaptera. ' + sockets + ' Polska wtyczka pasuje.' };
     let note = p.fit === 'partial'
-      ? sockets + ' Polska wtyczka zwykle pasuje, ale gniazdka bywają różne – weź adapter uniwersalny na wszelki wypadek.'
-      : sockets + ' Polska wtyczka nie pasuje – zabierz adapter.';
+      ? 'Adapter na wszelki wypadek. ' + sockets + ' Polska wtyczka zwykle pasuje, ale gniazdka bywają różne – weź adapter uniwersalny.'
+      : 'Potrzebujesz adaptera. ' + sockets + ' Polska wtyczka nie pasuje.';
     if (p.lowVoltage) note += ' Niskie napięcie – sprawdź, czy ładowarki obsługują ' + p.v + ' V (zwykle 100–240 V).';
     return { show: true, note };
   }

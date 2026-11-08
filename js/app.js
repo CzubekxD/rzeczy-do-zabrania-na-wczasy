@@ -296,8 +296,9 @@
   }
 
   function reset() {
-    if (!confirm('Odznaczyć wszystko i usunąć pozycje „tylko ten wyjazd”? Zapamiętane osoby i must-have zostaną.')) return;
+    if (!confirm('Odznaczyć wszystko, przywrócić ukryte pozycje i usunąć pozycje „tylko ten wyjazd”? Zapamiętane osoby i must-have zostaną.')) return;
     S.checked = {};
+    S.hidden = {};
     S.trip.extras = {};
     persist(); renderList();
   }

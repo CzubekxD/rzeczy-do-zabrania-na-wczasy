@@ -20,7 +20,7 @@ Strona: https://czubekxd.github.io/rzeczy-do-zabrania-na-wczasy/
 - Własne pozycje: „zawsze” (zapamiętane przy osobie, np. sprzęt do soczewek) albo „tylko ten wyjazd”.
   Domyślne pozycje można ukryć i przywrócić.
 - Samolot: znaczniki „≤100 ml” przy płynach i „podręczny” przy powerbanku.
-- Adapter do gniazdek: po wybraniu kraju aplikacja sprawdza (`js/plugs.js`), czy polska wtyczka pasuje. Jeśli tak – pozycja znika; jeśli nie – pokazuje typ gniazdka i napięcie (ostrzega przy 100–127 V).
+- Adapter do gniazdek: po wybraniu kraju aplikacja sprawdza (`js/plugs.js`), czy polska wtyczka pasuje. Pozycja zostaje zawsze i mówi wprost, czy adapter jest potrzebny, plus typ gniazdka i napięcie (ostrzeżenie przy 100–127 V).
 - Jasny/ciemny motyw według ustawień telefonu. Dane zostają w przeglądarce (localStorage).
 
 ## Uruchomienie lokalnie
