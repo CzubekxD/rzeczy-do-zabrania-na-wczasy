@@ -127,3 +127,5 @@ ul.items { list-style: none; margin: 0; padding: 0; }
   .row.two { grid-template-columns: 1fr; }
   .bar { width: 70px; }
 }
+
+.rain-list { margin: 6px 0 0; padding-left: 18px; font-size: .9rem; color: var(--muted, inherit); }

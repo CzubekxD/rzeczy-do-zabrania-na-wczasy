@@ -19,16 +19,21 @@
 
   // Progi pogodowe (°C, dni).
   const THRESHOLDS = {
-    swim: 22,        // strój kąpielowy, spodenki
+    swim: 22,        // strój kąpielowy
+    shorts: 20,      // spodenki (wcześniej 22 – przy 20–21° lista kazała brać kapelusz, ale nie spodenki)
+    cool: 18,        // dzień chłodniejszy – kurtka przejściowa/softshell, koszulka z długim rękawem
+    coolNight: 15,   // najzimniejsza noc poniżej – kurtka przejściowa, długa piżama
+    longSleeveNight: 12,
     sandals: 24,     // sandały
     hot: 28,         // mniej skarpetek
     sunUv: 3,        // krem, kapelusz, okulary od indeksu UV
     fleece: 18,      // nocą poniżej – bluza/polar
     warmNight: 22,   // nocą poniżej – lekka bluza na wieczór/klimatyzację
     heavyJacket: 5,  // ciepła kurtka
-    hatGloves: 3,    // czapka i rękawiczki
-    rainJacket: 2,   // dni z deszczem -> lekka kurtka przeciwdeszczowa
-    umbrella: 3
+    hatGloves: 5,    // czapka, rękawiczki, szalik (jak ciepła kurtka)
+    rainJacket: 1,   // dni z deszczem -> lekka kurtka (gdy brak danych godzinowych)
+    umbrella: 2,
+    softshellRainDays: 3 // bez danych godzinowych: tyle dni z deszczem i chłodno -> softshell
   };
 
   const DEFAULT_WEATHER = { tmax: 26, tmin: 18, rainDays: 1, uv: null, source: 'domyślnie' };
@@ -47,6 +52,8 @@
     const days = Math.max(1, Math.round(num(trip.days, 7)));
     const tmax = num(w.tmax, DEFAULT_WEATHER.tmax);
     const tmin = num(w.tmin, DEFAULT_WEATHER.tmin);
+    const tminAbs = Math.min(tmin, num(w.tminAbs, tmin)); // najzimniejsza noc
+    const adv = w.rain && w.rain.advice ? w.rain.advice : null;
     const rainDays = num(w.rainDays, DEFAULT_WEATHER.rainDays);
     const uv = w.uv == null ? null : num(w.uv, null);
     const socket = Plugs ? Plugs.advice(trip.country, trip.countryName) : { show: true, note: '' };
@@ -57,13 +64,30 @@
       laundry: trip.laundry || 'none',
       plane: trip.transport === 'plane',
       car: trip.transport === 'car',
-      tmax, tmin, rainDays, uv,
+      tmax, tmin, tminAbs, rainDays, uv,
+      rain: w.rain || null,
+      rainJacket: adv ? adv.rainJacket : rainDays >= THRESHOLDS.rainJacket,
+      umbrella: adv ? adv.umbrella : rainDays >= THRESHOLDS.umbrella,
+      softshellRain: adv ? adv.softshell : (rainDays >= THRESHOLDS.softshellRainDays && tmax < 20),
+      transitional: (tmax < THRESHOLDS.cool || tminAbs < THRESHOLDS.coolNight) && tminAbs >= THRESHOLDS.heavyJacket,
       uvHigh: uv != null ? uv >= THRESHOLDS.sunUv : tmax >= 20,
       swim: tmax >= THRESHOLDS.swim,
+      shorts: tmax >= THRESHOLDS.shorts,
       hot: tmax >= THRESHOLDS.hot,
       hasKids: (persons || []).some(isKid),
       hasBaby: (persons || []).some(isBaby)
     };
+  }
+
+  function rainNote(c) {
+    return c.rain && c.rain.lines ? 'Prognoza: ' + c.rain.lines.slice(0, 2).join('; ') + '.' : '';
+  }
+
+  function softshellNote(c) {
+    const base = c.softshellRain
+      ? 'Deszcz dłużej, mocniej lub przy chłodzie/wietrze – softshell lub kurtka z membraną.'
+      : 'Na chłodniejsze dni i noce; przy deszczu załóż lekką kurtkę przeciwdeszczową.';
+    return base + (c.softshellRain ? ' ' + rainNote(c) : '');
   }
 
   const isKid = p => p.type === 'D';
@@ -123,28 +147,39 @@
     { id: 'med-kids', cat: 'Apteczka i leki', scope: 'person', name: 'Lek na gorączkę dla dziecka (syrop / czopki)', who: isKid, liquid: true },
 
     // ---- Ubrania (każda osoba)
-    { id: 'cl-underwear', cat: 'Ubrania', scope: 'person', name: 'Bielizna', who: notBaby, qty: (c, p) => c.W + 1 + kidBonus(p) },
+    { id: 'cl-underwear', cat: 'Ubrania', scope: 'person', name: 'Bielizna', who: notBaby,
+      qty: (c, p) => Math.max(3, c.W + (c.hot ? 2 : 1)) + kidBonus(p) },
     { id: 'cl-body', cat: 'Ubrania', scope: 'person', name: 'Body / koszulki', who: isBaby, qty: c => c.W + 2 },
     { id: 'cl-socks', cat: 'Ubrania', scope: 'person', name: 'Skarpetki',
-      qty: (c, p) => (c.hot ? Math.ceil(c.W / 2) : Math.max(1, c.W - 1)) + kidBonus(p) },
-    { id: 'cl-shirts', cat: 'Ubrania', scope: 'person', name: 'Koszulki', who: notBaby, qty: (c, p) => c.W + kidBonus(p) },
-    { id: 'cl-shorts', cat: 'Ubrania', scope: 'person', name: 'Spodenki', when: c => c.swim,
+      qty: (c, p) => c.W + (c.tminAbs < 10 || c.rainDays >= 3 ? 1 : 0) + kidBonus(p) },
+    { id: 'cl-shirts', cat: 'Ubrania', scope: 'person', name: 'Koszulki', who: notBaby,
+      qty: (c, p) => c.W + (c.hot ? 1 : 0) + kidBonus(p) },
+    { id: 'cl-longsleeve', cat: 'Ubrania', scope: 'person', name: 'Koszulka z długim rękawem', who: notBaby,
+      when: c => c.tmax < THRESHOLDS.shorts || c.tminAbs < THRESHOLDS.longSleeveNight,
+      qty: c => Math.min(3, Math.max(1, Math.ceil(c.W / 3))),
+      note: 'Cienka warstwa pod bluzę lub kurtkę.' },
+    { id: 'cl-shorts', cat: 'Ubrania', scope: 'person', name: 'Spodenki', when: c => c.shorts,
       qty: (c, p) => Math.ceil(c.W / 2) + kidBonus(p) },
     { id: 'cl-trousers', cat: 'Ubrania', scope: 'person', name: 'Spodnie długie',
-      qty: (c, p) => (c.swim ? 1 : Math.ceil(c.W / 3)) + kidBonus(p),
+      qty: (c, p) => (c.swim ? 1 : Math.min(3, Math.ceil(c.W / 3))) + kidBonus(p),
       note: c => (c.swim ? 'Jedna para na chłodniejszy wieczór.' : '') },
     { id: 'cl-dress', cat: 'Ubrania', scope: 'person', name: 'Sukienka / spódnica', who: p => p.type === 'K', when: c => c.swim,
       qty: c => Math.ceil(c.W / 3), low: true },
-    { id: 'cl-pyjamas', cat: 'Ubrania', scope: 'person', name: 'Piżama', qty: (c, p) => (isKid(p) ? 2 : 1) },
+    { id: 'cl-pyjamas', cat: 'Ubrania', scope: 'person', name: 'Piżama', qty: (c, p) => (isKid(p) ? 2 : 1),
+      note: c => (c.tminAbs < THRESHOLDS.coolNight ? 'Ciepła, z długim rękawem i nogawkami.' : '') },
     { id: 'cl-swim', cat: 'Ubrania', scope: 'person', name: 'Strój kąpielowy', when: c => c.swim, qty: () => 2,
       note: 'Dwa, żeby jeden zdążył wyschnąć.' },
     { id: 'cl-hoodie', cat: 'Ubrania', scope: 'person', name: 'Bluza / polar',
-      when: c => c.tmin < THRESHOLDS.warmNight,
-      qty: c => (c.tmin < THRESHOLDS.fleece ? Math.max(1, Math.ceil(c.W / 5)) : 1),
-      note: c => (c.tmin < THRESHOLDS.fleece ? '' : 'Na wieczór i klimatyzację.') },
-    { id: 'cl-rain', cat: 'Ubrania', scope: 'person', name: 'Lekka kurtka przeciwdeszczowa', when: c => c.rainDays >= THRESHOLDS.rainJacket },
-    { id: 'cl-warm', cat: 'Ubrania', scope: 'person', name: 'Ciepła kurtka', when: c => c.tmin < THRESHOLDS.heavyJacket },
-    { id: 'cl-hat-gloves', cat: 'Ubrania', scope: 'person', name: 'Czapka i rękawiczki', when: c => c.tmin < THRESHOLDS.hatGloves },
+      when: c => c.tminAbs < THRESHOLDS.warmNight,
+      qty: c => (c.tminAbs < THRESHOLDS.fleece ? Math.max(1, Math.ceil(c.W / 5)) : 1),
+      note: c => (c.tminAbs < THRESHOLDS.fleece ? '' : 'Na wieczór i klimatyzację.') },
+    { id: 'cl-softshell', cat: 'Ubrania', scope: 'person', name: 'Softshell / kurtka przejściowa',
+      when: c => c.softshellRain || c.transitional, qty: () => 1,
+      note: c => softshellNote(c) },
+    { id: 'cl-rain', cat: 'Ubrania', scope: 'person', name: 'Lekka kurtka przeciwdeszczowa',
+      when: c => c.rainJacket && !(c.softshellRain || c.transitional), note: c => rainNote(c) },
+    { id: 'cl-warm', cat: 'Ubrania', scope: 'person', name: 'Ciepła kurtka', when: c => c.tminAbs < THRESHOLDS.heavyJacket },
+    { id: 'cl-hat-gloves', cat: 'Ubrania', scope: 'person', name: 'Czapka, rękawiczki i szalik', when: c => c.tminAbs < THRESHOLDS.hatGloves },
 
     // ---- Obuwie
     { id: 'sh-daily', cat: 'Obuwie', scope: 'person', name: 'Buty na co dzień', qty: () => 1 },
@@ -158,7 +193,7 @@
     { id: 'sun-towel', cat: 'Plaża i słońce', scope: 'person', name: 'Ręcznik plażowy', low: true, when: c => c.swim,
       note: 'Hotele all inclusive zwykle wydają ręczniki basenowe.' },
     { id: 'sun-bag', cat: 'Plaża i słońce', scope: 'shared', name: 'Torba plażowa', when: c => c.swim, low: true },
-    { id: 'sun-umbrella', cat: 'Plaża i słońce', scope: 'shared', name: 'Parasol przeciwdeszczowy', low: true, when: c => c.rainDays >= THRESHOLDS.umbrella },
+    { id: 'sun-umbrella', cat: 'Plaża i słońce', scope: 'shared', name: 'Parasol przeciwdeszczowy', low: true, when: c => c.umbrella },
 
     // ---- Dziecko
     { id: 'kid-diapers', cat: 'Dziecko', scope: 'person', name: 'Pieluchy', who: isBaby, qty: c => 8 * c.days,

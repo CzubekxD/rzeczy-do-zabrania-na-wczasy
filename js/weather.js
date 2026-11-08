@@ -36,6 +36,7 @@
     return {
       tmax: Math.round(mean(tmax)),
       tmin: Math.round(mean(tmin)),
+      tminAbs: Math.round(Math.min(...tmin)), // najzimniejsza noc – ważniejsza dla kurtki niż średnia
       rainDays: rain.filter(x => x >= 1).length,
       uv: uv.length ? Math.round(Math.max(...uv)) : null
     };
@@ -46,6 +47,7 @@
     return {
       tmax: Math.round(mean(summaries.map(s => s.tmax))),
       tmin: Math.round(mean(summaries.map(s => s.tmin))),
+      tminAbs: Math.round(mean(summaries.map(s => s.tminAbs))),
       rainDays: Math.round(mean(summaries.map(s => s.rainDays))),
       uv: uvs.length ? Math.round(mean(uvs)) : null
     };
@@ -132,6 +134,122 @@
     return summarize(data.daily);
   }
 
+
+  // ---------- deszcz godzinowy (PROP: wszystkie progi to propozycje z reports/, nie dane ze źródeł) ----------
+  const RAIN = {
+    dayFrom: 7, dayTo: 22,   // okno dnia (godziny lokalne), nocny deszcz nas nie dotyczy
+    minMm: 0.1,              // godzina „z deszczem”
+    minProb: 30,             // % – poniżej godziny nie liczymy (gdy prognoza podaje prawdopodobieństwo)
+    drizzle: 0.5,            // mm/h poniżej – mżawka
+    heavy: 7.6,              // mm/h od – ulewny (próg AMS)
+    heavyEpisodeSum: 15,     // mm w jednym epizodzie – ulewny
+    showerMaxHours: 2,       // epizod do tylu godzin – przelotny
+    gust: 40,                // km/h – silny wiatr
+    softshellHours: 4,       // godzin deszczu w dniu, od których softshell
+    softshellTmax: 18        // °C – przy deszczu chłodniej niż to: softshell
+  };
+
+  const TYPE_LABEL = { ulewny: 'ulewny deszcz', przelotny: 'przelotny deszcz', ciągły: 'deszcz ciągły', mżawka: 'mżawka' };
+
+  /** hours: [{h, mm, showers, p}] posortowane po godzinie -> epizody (kolejne godziny z deszczem). */
+  function buildEpisodes(hours) {
+    const rainy = hours.filter(x => x.mm >= RAIN.minMm && (x.p == null || x.p >= RAIN.minProb));
+    const eps = [];
+    let cur = null;
+    rainy.forEach(x => {
+      if (cur && x.h === cur.to + 1) { cur.to = x.h; cur.list.push(x); } else { cur = { from: x.h, to: x.h, list: [x] }; eps.push(cur); }
+    });
+    return eps.map(e => {
+      const sum = e.list.reduce((a, x) => a + x.mm, 0);
+      const showers = e.list.reduce((a, x) => a + (x.showers || 0), 0);
+      const maxMm = Math.max(...e.list.map(x => x.mm));
+      const ps = e.list.map(x => x.p).filter(x => x != null);
+      const len = e.to - e.from + 1;
+      let type;
+      if (maxMm >= RAIN.heavy || sum >= RAIN.heavyEpisodeSum) type = 'ulewny';
+      else if (maxMm < RAIN.drizzle) type = 'mżawka';
+      else if (len <= RAIN.showerMaxHours || (sum > 0 && showers / sum >= 0.5)) type = 'przelotny';
+      else type = 'ciągły';
+      return { from: e.from, to: e.to + 1, type, sum: round1(sum), maxMm: round1(maxMm), p: ps.length ? Math.max(...ps) : null };
+    });
+  }
+
+  const round1 = x => Math.round(x * 10) / 10;
+  const pad = n => String(n).padStart(2, '0');
+
+  /** Podsumowanie jednego dnia + decyzje co zabrać. */
+  function summarizeRainDay(date, hours) {
+    const day = hours.filter(x => x.h >= RAIN.dayFrom && x.h < RAIN.dayTo);
+    const episodes = buildEpisodes(day);
+    const rainyHours = episodes.reduce((a, e) => a + (e.to - e.from), 0);
+    const sum = round1(episodes.reduce((a, e) => a + e.sum, 0));
+    const maxMm = episodes.length ? Math.max(...episodes.map(e => e.maxMm)) : 0;
+    const pArr = episodes.map(e => e.p).filter(x => x != null);
+    const pMax = pArr.length ? Math.max(...pArr) : null;
+    const gusts = day.map(x => x.g).filter(x => x != null);
+    const gust = gusts.length ? Math.max(...gusts) : 0;
+    const temps = day.map(x => x.t).filter(x => x != null);
+    const tmax = temps.length ? Math.max(...temps) : null;
+    const heavy = maxMm >= RAIN.heavy || episodes.some(e => e.type === 'ulewny');
+    const rain = rainyHours > 0;
+    return {
+      date, episodes, hours: rainyHours, sum, maxMm, pMax, gust, tmax, heavy,
+      umbrella: rain && maxMm >= 0.5 && (pMax == null || pMax >= 40) && gust < RAIN.gust,
+      rainJacket: rain && (rainyHours >= 2 || sum >= 2 || gust >= RAIN.gust),
+      softshell: rain && (heavy || rainyHours >= RAIN.softshellHours || (tmax != null && tmax < RAIN.softshellTmax) || gust >= RAIN.gust)
+    };
+  }
+
+  function episodeText(e) {
+    return pad(e.from) + ':00–' + pad(e.to) + ':00 ' + TYPE_LABEL[e.type] + ', do ' + String(e.maxMm).replace('.', ',') + ' mm/h' +
+      (e.p != null ? ', ' + e.p + '%' : '');
+  }
+
+  const dm = iso => iso.slice(8, 10) + '.' + iso.slice(5, 7);
+
+  /** days: wynik summarizeRainDay dla każdego dnia -> {mode, days, advice, lines}. */
+  function rainSummary(days) {
+    const rainy = days.filter(d => d.hours > 0);
+    const need = key => {
+      const n = days.filter(d => d[key]).length;
+      return n >= 2 || days.some(d => d[key] && d.heavy);
+    };
+    const advice = { umbrella: need('umbrella'), rainJacket: need('rainJacket'), softshell: need('softshell') };
+    const lines = rainy.slice(0, 4).map(d => dm(d.date) + ' ' + d.episodes.map(episodeText).join('; '));
+    if (rainy.length > 4) lines.push('…i ' + (rainy.length - 4) + ' kolejnych dni z deszczem');
+    if (!rainy.length) lines.push('Bez istotnego deszczu w godz. ' + RAIN.dayFrom + ':00–' + RAIN.dayTo + ':00.');
+    return { mode: 'hourly', days: rainy, advice, lines };
+  }
+
+  function hourlyUrl(lat, lon, from, to) {
+    return FORECAST + '?latitude=' + lat + '&longitude=' + lon + '&start_date=' + from + '&end_date=' + to +
+      '&hourly=precipitation,showers,precipitation_probability,wind_gusts_10m,temperature_2m&timezone=auto';
+  }
+
+  /** hourly: odpowiedź Open-Meteo (tablice time/precipitation/…) -> rainSummary. */
+  function summarizeHourly(hourly) {
+    const t = (hourly && hourly.time) || [];
+    if (!t.length) throw new Error('brak danych godzinowych');
+    const byDate = {};
+    t.forEach((stamp, i) => {
+      const date = stamp.slice(0, 10);
+      (byDate[date] = byDate[date] || []).push({
+        h: Number(stamp.slice(11, 13)),
+        mm: nums([hourly.precipitation && hourly.precipitation[i]])[0] || 0,
+        showers: nums([hourly.showers && hourly.showers[i]])[0] || 0,
+        p: nums([hourly.precipitation_probability && hourly.precipitation_probability[i]])[0] ?? null,
+        g: nums([hourly.wind_gusts_10m && hourly.wind_gusts_10m[i]])[0] ?? null,
+        t: nums([hourly.temperature_2m && hourly.temperature_2m[i]])[0] ?? null
+      });
+    });
+    return rainSummary(Object.keys(byDate).sort().map(d => summarizeRainDay(d, byDate[d])));
+  }
+
+  async function fetchHourlyRain(lat, lon, from, to, f) {
+    const data = await getJson(hourlyUrl(lat, lon, from, to), f);
+    return summarizeHourly(data.hourly);
+  }
+
   /** {lat, lon, from, to, today} (daty ISO) -> {tmax, tmin, rainDays, uv, source} */
   async function fetchWeather(opts, fetchFn) {
     const f = fetchFn || fetch.bind(globalThis);
@@ -141,8 +259,12 @@
       return Object.assign(s, { source: 'dane historyczne' });
     }
     if (to <= addDays(today, FORECAST_DAYS)) {
-      const s = await fetchDaily(FORECAST, lat, lon, from < today ? today : from, to, true, f);
-      return Object.assign(s, { source: 'prognoza' });
+      const start = from < today ? today : from;
+      const [s, rain] = await Promise.all([
+        fetchDaily(FORECAST, lat, lon, start, to, true, f),
+        fetchHourlyRain(lat, lon, start, to, f).catch(() => null) // błąd godzin nie psuje reszty pogody
+      ]);
+      return Object.assign(s, { source: 'prognoza' }, rain ? { rain } : {});
     }
     const k0 = firstArchiveShift(to, today);
     const years = [k0, k0 + 1, k0 + 2];
@@ -155,5 +277,6 @@
     return Object.assign(average(ok), { source: 'średnia z lat ' + y[0] + '–' + y[y.length - 1] });
   }
 
-  return { summarize, average, addYears, addDays, firstArchiveShift, cityQueries, pickResults, geocode, fetchWeather, dailyUrl };
+  return { summarize, average, addYears, addDays, firstArchiveShift, cityQueries, pickResults, geocode, fetchWeather, dailyUrl,
+    RAIN, buildEpisodes, summarizeRainDay, summarizeHourly, hourlyUrl };
 });
